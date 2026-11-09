@@ -293,6 +293,7 @@ const HOME = { center: [-98.5, 38.6], zoom: 3.55, pitch: 40, bearing: -6 };
 const map = new maplibregl.Map({
   container: "map",
   ...HOME,
+  hash: true,                    // camera lives in the URL (#zoom/lat/lng/bearing/pitch) so views can be shared
   maxPitch: 80,
   attributionControl: false,
   style: {
@@ -379,7 +380,7 @@ map.on("load", async () => {
   });
 
   // gentle intro: drift in from higher up
-  map.easeTo({ ...HOME, pitch: 48, bearing: -12, duration: 4000 });
+  if (!location.hash) map.easeTo({ ...HOME, pitch: 48, bearing: -12, duration: 4000 });   // skip the intro on a shared view
 });
 
 // ---------- Interactions ----------
