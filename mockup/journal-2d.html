@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parks I've Wandered</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,800;9..144,900&family=Caveat:wght@500;700&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+<style>
+  :root {
+    --paper: #f2e8d2;
+    --paper-dark: #e6d8b8;
+    --ink: #3b3226;
+    --ink-soft: #7a6a55;
+    --forest: #2f4a35;
+    --sage: #8fa37e;
+    --land: #e9dcbc;
+    --orange: #d4612a;
+    --orange-dark: #a8461a;
+    --lake: #8aa9b0;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background-color: var(--paper);
+    /* paper grain */
+    background-image:
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .35  0 0 0 0 .27  0 0 0 0 .15  0 0 0 .09 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"),
+      radial-gradient(ellipse at 50% 40%, transparent 55%, rgba(120,90,50,.18));
+    color: var(--ink);
+    font-family: "Lora", Georgia, serif;
+    font-size: 14px;
+    height: 100vh; overflow: hidden;
+    display: grid; grid-template-rows: auto 1fr auto;
+  }
+
+  /* ---------- Header: vintage park-poster banner ---------- */
+  header {
+    display: flex; align-items: center; gap: 26px; flex-wrap: wrap;
+    padding: 14px 26px 12px;
+    background: var(--forest);
+    color: var(--paper);
+    border-bottom: 4px double var(--paper-dark);
+    box-shadow: 0 3px 0 var(--forest);
+    position: relative;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand svg { flex: none; }
+  .brand h1 { font-family: "Fraunces", serif; font-weight: 900; font-size: 24px; letter-spacing: .06em; margin: 0; text-transform: uppercase; line-height: 1; }
+  .brand .sub { font-family: "Caveat", cursive; font-size: 19px; color: #f0b98a; line-height: 1; margin-top: 2px; }
+  .patches { display: flex; gap: 12px; margin-left: auto; flex-wrap: wrap; }
+  .patch {
+    border: 2px solid var(--paper-dark); border-radius: 10px; padding: 5px 12px 4px;
+    text-align: center; min-width: 82px; outline: 1px dashed rgba(242,232,210,.45); outline-offset: -6px;
+  }
+  .patch .v { font-family: "Fraunces", serif; font-weight: 800; font-size: 20px; line-height: 1.1; }
+  .patch .v b { color: #f0a46d; }
+  .patch .k { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; opacity: .8; }
+
+  main { display: grid; grid-template-columns: 1fr 340px; min-height: 0; }
+  .mapwrap { position: relative; min-height: 0; }
+  #map { width: 100%; height: 100%; display: block; cursor: grab; }
+  #map:active { cursor: grabbing; }
+
+  .state { fill: var(--land); stroke: var(--ink-soft); stroke-width: .7; stroke-dasharray: 3 2; stroke-opacity: .7; }
+  .state:nth-child(3n) { fill: #e4d6b2; }
+  .state:nth-child(5n) { fill: #dfd3ad; }
+  .nation { fill: none; stroke: var(--ink); stroke-width: 1.6; stroke-linejoin: round; }
+  .shadow { fill: none; stroke: var(--lake); stroke-width: 7; stroke-opacity: .35; }
+  .tree { fill: var(--sage); opacity: .55; pointer-events: none; }
+  .park-dim { fill: var(--paper); stroke: var(--ink-soft); stroke-width: 1.1; cursor: default; }
+  .park-dim:hover { stroke: var(--forest); fill: #fff; }
+  .park-on { fill: var(--orange); stroke: var(--paper); stroke-width: 1.4; cursor: pointer; }
+  .park-on:hover { fill: var(--orange-dark); }
+  .park-on.sel { fill: var(--forest); }
+  .park-halo { fill: none; stroke: var(--orange); stroke-width: .9; stroke-dasharray: 2 2; pointer-events: none; }
+  .route { fill: none; stroke: var(--ink-soft); stroke-width: 1.3; stroke-dasharray: 1 4; stroke-linecap: round; opacity: .55; }
+  .route.active { stroke: var(--orange-dark); stroke-width: 2.4; stroke-dasharray: 6 5; opacity: 1; }
+  .car { fill: var(--forest); stroke: var(--paper); stroke-width: 1; pointer-events: none; }
+  .park-label { font-family: "Caveat", cursive; font-size: 15px; font-weight: 700; fill: var(--forest); pointer-events: none;
+                paint-order: stroke; stroke: var(--paper); stroke-width: 3px; }
+
+  .compass { position: absolute; right: 18px; bottom: 14px; opacity: .7; pointer-events: none; }
+  .note { position: absolute; left: 22px; bottom: 16px; font-family: "Caveat", cursive; font-size: 18px; color: var(--ink-soft); transform: rotate(-2deg); }
+  .legend { position: absolute; left: 22px; top: 16px; display: flex; gap: 18px; font-size: 12px; color: var(--ink-soft); font-style: italic;
+            background: rgba(242,232,210,.75); padding: 6px 10px; border: 1px solid var(--paper-dark); border-radius: 4px; }
+  .legend span { display: flex; align-items: center; gap: 6px; }
+
+  /* ---------- Side panel: field journal page ---------- */
+  aside {
+    background:
+      repeating-linear-gradient(180deg, transparent 0 27px, rgba(122,106,85,.16) 27px 28px),
+      #f7efdd;
+    border-left: 1px solid var(--paper-dark);
+    box-shadow: inset 6px 0 10px -6px rgba(80,60,30,.25);
+    padding: 22px 24px; overflow-y: auto; position: relative;
+  }
+  aside::before { content: ""; position: absolute; left: 14px; top: 0; bottom: 0; border-left: 1.5px solid rgba(212,97,42,.35); }
+  .eyebrow { font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: var(--ink-soft); margin: 0 0 4px; }
+  .pname { font-family: "Fraunces", serif; font-weight: 900; font-size: 28px; line-height: 1.05; margin: 0; color: var(--forest); }
+  .pstate { font-style: italic; color: var(--ink-soft); margin: 4px 0 12px; }
+  .hand { font-family: "Caveat", cursive; font-size: 22px; color: var(--orange-dark); line-height: 1.15; }
+
+  .stamp {
+    width: 150px; height: 150px; border-radius: 50%; margin: 6px auto 14px;
+    border: 3px solid var(--orange); color: var(--orange);
+    display: grid; place-items: center; text-align: center; position: relative;
+    transform: rotate(-8deg); opacity: .88;
+    mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='150' height='150'><filter id='r'><feTurbulence baseFrequency='.55' numOctaves='2'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.2 1.55'/></filter><rect width='150' height='150' filter='url(%23r)'/></svg>");
+  }
+  .stamp::before { content: ""; position: absolute; inset: 6px; border-radius: 50%; border: 1.5px dashed var(--orange); }
+  .stamp .t1 { font-family: "Fraunces", serif; font-weight: 900; font-size: 15px; letter-spacing: .08em; text-transform: uppercase; max-width: 110px; line-height: 1.05; }
+  .stamp .t2 { font-family: "Fraunces", serif; font-weight: 800; font-size: 20px; margin: 4px 0 2px; }
+  .stamp .t3 { font-size: 10px; letter-spacing: .2em; }
+
+  .facts { display: grid; grid-template-columns: 92px 1fr; gap: 4px 10px; margin: 8px 0 18px; line-height: 1.6; }
+  .facts dt { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-soft); padding-top: 3px; }
+  .facts dd { margin: 0; }
+  .divider { border: 0; height: 12px; margin: 16px 0;
+    background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='12'><path d='M0 6 Q 15 1 30 6 T 60 6 T 90 6 T 120 6 T 150 6 T 180 6 T 210 6 T 240 6 T 270 6 T 300 6' fill='none' stroke='%237a6a55' stroke-width='1.2'/></svg>") center/300px 12px repeat-x; opacity: .7; }
+
+  .trail { list-style: none; margin: 6px 0 0; padding: 0 0 0 4px; }
+  .trail li { position: relative; padding: 4px 0 10px 24px; cursor: pointer; }
+  .trail li::before { content: ""; position: absolute; left: 4px; top: 10px; width: 10px; height: 10px; border-radius: 50%;
+                      border: 2px solid var(--orange); background: #f7efdd; z-index: 1; }
+  .trail li::after { content: ""; position: absolute; left: 9px; top: 18px; bottom: -6px; border-left: 2px dotted var(--ink-soft); }
+  .trail li:last-child::after { display: none; }
+  .trail li.cur::before { background: var(--orange); }
+  .trail li.cur .n { font-weight: 600; color: var(--forest); }
+  .trail li:hover .n { text-decoration: underline wavy var(--orange) 1px; text-underline-offset: 3px; }
+  .trail .d { font-family: "Caveat", cursive; font-size: 18px; color: var(--ink-soft); margin-right: 6px; }
+
+  .polaroid { background: #fffaf0; padding: 8px 8px 50px; box-shadow: 0 2px 6px rgba(60,40,20,.25); transform: rotate(2deg); margin: 6px 4px 18px; position: relative; }
+  .polaroid .ph { height: 120px; background: linear-gradient(180deg, #c9d8d6 0 45%, #9fb08a 45% 70%, #6f8460 70%); position: relative; overflow: hidden; }
+  .polaroid .ph svg { position: absolute; bottom: 30%; left: 0; width: 100%; }
+  .polaroid .cap { position: absolute; bottom: 6px; left: 10px; right: 10px; line-height: 1; text-align: center; font-family: "Caveat", cursive; font-size: 19px; }
+  .tape { position: absolute; top: -9px; left: 50%; width: 70px; height: 18px; margin-left: -35px; background: rgba(214,196,150,.75); transform: rotate(-4deg); }
+
+  /* ---------- Footer: trail timeline ---------- */
+  footer { background: var(--paper-dark); border-top: 2px solid var(--ink-soft); padding: 10px 26px 8px; }
+  #timeline { width: 100%; height: 78px; display: block; }
+  .tl-path { fill: none; stroke: var(--ink-soft); stroke-width: 2; stroke-dasharray: 2 5; stroke-linecap: round; }
+  .tl-tick text { fill: var(--ink-soft); font-size: 11px; font-family: "Lora", serif; font-style: italic; }
+  .tl-trip { cursor: pointer; }
+  .tl-trip .flag { fill: var(--paper); stroke: var(--orange); stroke-width: 1.5; }
+  .tl-trip.active .flag { fill: var(--orange); }
+  .tl-trip .pole { stroke: var(--ink); stroke-width: 1.5; }
+  .tl-trip text { font-family: "Caveat", cursive; font-size: 17px; font-weight: 700; fill: var(--forest); }
+
+  #tip { position: fixed; pointer-events: none; z-index: 60; opacity: 0; transition: opacity .12s;
+         background: #fffaf0; border: 1px solid var(--ink-soft); padding: 5px 10px; box-shadow: 2px 3px 0 rgba(60,40,20,.2); }
+  #tip b { font-family: "Fraunces", serif; color: var(--forest); }
+  #tip .s { font-family: "Caveat", cursive; font-size: 16px; color: var(--ink-soft); }
+
+  @media (max-width: 820px) {
+    main { grid-template-columns: 1fr; grid-template-rows: 1fr 260px; }
+    aside { border-left: 0; border-top: 1px solid var(--paper-dark); }
+    header { padding: 10px 16px; gap: 10px; }
+    .patches { margin-left: 0; }
+    .patch { min-width: 64px; padding: 3px 8px; }
+    .brand h1 { font-size: 18px; }
+    .compass, .note { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <!-- arrowhead-ish emblem: mountain + pine -->
+    <svg width="44" height="52" viewBox="0 0 44 52" aria-hidden="true">
+      <path d="M22 2 L42 12 L38 40 L22 50 L6 40 L2 12 Z" fill="#f2e8d2" stroke="#e6d8b8" stroke-width="2"/>
+      <path d="M8 38 L20 18 L26 27 L30 22 L38 38 Z" fill="#2f4a35"/>
+      <path d="M20 18 L23 23 L18 23 Z" fill="#f2e8d2"/>
+      <circle cx="31" cy="14" r="3.5" fill="#d4612a"/>
+      <path d="M13 40 L16 33 L19 40 Z M15 44 L16 38 L17 44 Z" fill="#2f4a35"/>
+    </svg>
+    <div>
+      <h1>Parks I've Wandered</h1>
+      <div class="sub" id="s-sub">a field journal of road trips</div>
+    </div>
+  </div>
+  <div class="patches">
+    <div class="patch"><div class="v"><b id="s-parks">0</b>/63</div><div class="k">Parks</div></div>
+    <div class="patch"><div class="v" id="s-trips">0</div><div class="k">Road trips</div></div>
+    <div class="patch"><div class="v" id="s-miles">0</div><div class="k">Miles</div></div>
+    <div class="patch"><div class="v" id="s-states">0</div><div class="k">States</div></div>
+  </div>
+</header>
+
+<main>
+  <div class="mapwrap">
+    <div class="legend">
+      <span><svg width="12" height="12"><circle cx="6" cy="6" r="5" fill="#d4612a" stroke="#f2e8d2" stroke-width="1.4"/></svg>visited</span>
+      <span><svg width="12" height="12"><circle cx="6" cy="6" r="4" fill="#f2e8d2" stroke="#7a6a55" stroke-width="1.1"/></svg>still to see</span>
+      <span><svg width="26" height="8"><path d="M1 4 H25" stroke="#a8461a" stroke-width="2.2" stroke-dasharray="6 5"/></svg>the road</span>
+    </div>
+    <svg id="map" viewBox="0 0 975 610" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="note">drag to explore · scroll to zoom · esc to reset</div>
+    <svg class="compass" width="64" height="64" viewBox="-32 -32 64 64" aria-hidden="true">
+      <circle r="26" fill="none" stroke="#7a6a55" stroke-width="1"/>
+      <circle r="22" fill="none" stroke="#7a6a55" stroke-width=".6" stroke-dasharray="2 2"/>
+      <path d="M0 -28 L5 0 L0 28 L-5 0 Z" fill="#3b3226"/>
+      <path d="M0 -28 L5 0 L-5 0 Z" fill="#d4612a"/>
+      <path d="M-28 0 L0 4 L28 0 L0 -4 Z" fill="#7a6a55" opacity=".6"/>
+      <text y="-29" text-anchor="middle" font-family="Fraunces" font-weight="800" font-size="9" fill="#3b3226" dy="-1">N</text>
+    </svg>
+  </div>
+  <aside id="panel"></aside>
+</main>
+
+<footer><svg id="timeline"></svg></footer>
+<div id="tip"></div>
+
+<script>
+// ---------- Data (sample; the real app generates trips.json from Google Timeline) ----------
+const PARKS = [
+  ["acadia","Acadia","Maine",44.35,-68.21],["arches","Arches","Utah",38.68,-109.57],["badlands","Badlands","South Dakota",43.75,-102.5],
+  ["big-bend","Big Bend","Texas",29.25,-103.25],["biscayne","Biscayne","Florida",25.65,-80.08],["black-canyon","Black Canyon of the Gunnison","Colorado",38.57,-107.72],
+  ["bryce","Bryce Canyon","Utah",37.57,-112.18],["canyonlands","Canyonlands","Utah",38.2,-109.93],["capitol-reef","Capitol Reef","Utah",38.2,-111.17],
+  ["carlsbad","Carlsbad Caverns","New Mexico",32.17,-104.44],["channel-islands","Channel Islands","California",34.01,-119.42],["congaree","Congaree","South Carolina",33.78,-80.78],
+  ["crater-lake","Crater Lake","Oregon",42.94,-122.1],["cuyahoga","Cuyahoga Valley","Ohio",41.24,-81.55],["death-valley","Death Valley","California",36.24,-116.82],
+  ["denali","Denali","Alaska",63.33,-150.5],["dry-tortugas","Dry Tortugas","Florida",24.63,-82.87],["everglades","Everglades","Florida",25.32,-80.93],
+  ["gates-arctic","Gates of the Arctic","Alaska",67.78,-153.3],["gateway-arch","Gateway Arch","Missouri",38.63,-90.19],["glacier","Glacier","Montana",48.8,-114.0],
+  ["glacier-bay","Glacier Bay","Alaska",58.5,-137.0],["grand-canyon","Grand Canyon","Arizona",36.06,-112.14],["grand-teton","Grand Teton","Wyoming",43.73,-110.8],
+  ["great-basin","Great Basin","Nevada",38.98,-114.3],["great-sand-dunes","Great Sand Dunes","Colorado",37.73,-105.51],["great-smoky","Great Smoky Mountains","Tennessee",35.68,-83.53],
+  ["guadalupe","Guadalupe Mountains","Texas",31.92,-104.87],["haleakala","Haleakalā","Hawaiʻi",20.72,-156.17],["hawaii-volcanoes","Hawaiʻi Volcanoes","Hawaiʻi",19.38,-155.2],
+  ["hot-springs","Hot Springs","Arkansas",34.51,-93.05],["indiana-dunes","Indiana Dunes","Indiana",41.65,-87.05],["isle-royale","Isle Royale","Michigan",48.1,-88.55],
+  ["joshua-tree","Joshua Tree","California",33.79,-115.9],["katmai","Katmai","Alaska",58.5,-155.0],["kenai","Kenai Fjords","Alaska",59.92,-149.65],
+  ["kings-canyon","Kings Canyon","California",36.8,-118.55],["kobuk","Kobuk Valley","Alaska",67.55,-159.28],["lake-clark","Lake Clark","Alaska",60.97,-153.42],
+  ["lassen","Lassen Volcanic","California",40.49,-121.51],["mammoth-cave","Mammoth Cave","Kentucky",37.18,-86.1],["mesa-verde","Mesa Verde","Colorado",37.18,-108.49],
+  ["mount-rainier","Mount Rainier","Washington",46.85,-121.75],["new-river","New River Gorge","West Virginia",38.07,-81.08],["north-cascades","North Cascades","Washington",48.7,-121.2],
+  ["olympic","Olympic","Washington",47.97,-123.5],["petrified","Petrified Forest","Arizona",35.07,-109.78],["pinnacles","Pinnacles","California",36.48,-121.16],
+  ["redwood","Redwood","California",41.3,-124.0],["rocky","Rocky Mountain","Colorado",40.4,-105.58],["saguaro","Saguaro","Arizona",32.25,-110.5],
+  ["sequoia","Sequoia","California",36.43,-118.68],["shenandoah","Shenandoah","Virginia",38.53,-78.35],["theodore-roosevelt","Theodore Roosevelt","North Dakota",46.97,-103.45],
+  ["voyageurs","Voyageurs","Minnesota",48.5,-92.88],["white-sands","White Sands","New Mexico",32.78,-106.17],["wind-cave","Wind Cave","South Dakota",43.57,-103.48],
+  ["wrangell","Wrangell–St. Elias","Alaska",61.0,-142.0],["yellowstone","Yellowstone","Wyoming",44.6,-110.5],["yosemite","Yosemite","California",37.83,-119.5],
+  ["zion","Zion","Utah",37.3,-113.05]
+].map(([id,name,state,lat,lon]) => ({id,name,state,lat,lon}));
+const parkById = Object.fromEntries(PARKS.map(p => [p.id, p]));
+
+const TRIPS = [
+  { id:"pnw", name:"Pacific Northwest Run", start:"2023-08-05", end:"2023-08-13", miles:1180,
+    note:"Rain forest, glaciers and the bluest lake I've ever seen.",
+    visits:[{parkId:"olympic",date:"2023-08-06",endDate:"2023-08-07"},{parkId:"mount-rainier",date:"2023-08-08"},{parkId:"crater-lake",date:"2023-08-11"}],
+    route:[[-122.33,47.61],[-122.63,47.57],[-123.43,48.1],[-123.5,47.97],[-123.0,47.04],[-122.0,46.75],[-121.75,46.85],[-122.68,45.52],[-123.03,44.94],[-122.5,43.6],[-122.1,42.94],[-121.31,44.06],[-121.2,45.6],[-122.68,45.52],[-122.33,47.61]] },
+  { id:"sw", name:"Southwest Loop", start:"2024-06-13", end:"2024-06-21", miles:1620,
+    note:"Red rock everywhere. Six parks in nine days.",
+    visits:[{parkId:"zion",date:"2024-06-14"},{parkId:"bryce",date:"2024-06-15"},{parkId:"capitol-reef",date:"2024-06-16"},
+            {parkId:"arches",date:"2024-06-17"},{parkId:"canyonlands",date:"2024-06-18"},{parkId:"grand-canyon",date:"2024-06-20"}],
+    route:[[-115.14,36.17],[-113.58,37.1],[-113.05,37.3],[-112.6,37.5],[-112.18,37.57],[-111.6,38.0],[-111.17,38.2],[-110.71,38.37],[-110.16,38.99],[-109.57,38.68],[-109.55,38.57],[-109.93,38.2],[-109.34,37.87],[-110.25,36.73],[-111.45,36.4],[-112.14,36.06],[-112.2,35.6],[-114.05,35.19],[-115.14,36.17]] },
+  { id:"rockies", name:"Rockies & Dunes", start:"2025-07-02", end:"2025-07-08", miles:590,
+    note:"Elk on Trail Ridge Road, then sandboarding at sunset.",
+    visits:[{parkId:"rocky",date:"2025-07-03",endDate:"2025-07-04"},{parkId:"great-sand-dunes",date:"2025-07-06"}],
+    route:[[-104.99,39.74],[-105.27,40.02],[-105.52,40.38],[-105.58,40.4],[-105.9,40.25],[-106.1,39.6],[-106.0,38.9],[-105.9,38.0],[-105.51,37.73],[-104.61,38.25],[-104.82,38.83],[-104.99,39.74]] },
+];
+const visitedIds = new Set(TRIPS.flatMap(t => t.visits.map(v => v.parkId)));
+
+// ---------- Helpers ----------
+const parseDate = d3.utcParse("%Y-%m-%d");
+const fmtLong = d3.utcFormat("%A, %B %-d, %Y");
+const fmtShort = d3.utcFormat("%b %-d");
+const dayOfTrip = (trip, date) => Math.round((parseDate(date) - parseDate(trip.start)) / 864e5) + 1;
+
+// ---------- Map ----------
+const W = 975, H = 610;
+const projection = d3.geoAlbersUsa().scale(1300).translate([W/2, H/2]);
+const svg = d3.select("#map");
+const defs = svg.append("defs");
+// wobbly hand-inked lines
+const rough = defs.append("filter").attr("id","rough");
+rough.append("feTurbulence").attr("type","fractalNoise").attr("baseFrequency",.035).attr("numOctaves",2).attr("seed",7);
+rough.append("feDisplacementMap").attr("in","SourceGraphic").attr("scale",3.5);
+
+const g = svg.append("g");
+const gLand = g.append("g").attr("filter","url(#rough)");
+const gTrees = g.append("g"), gRoutes = g.append("g"), gParks = g.append("g"), gLabels = g.append("g");
+
+const zoom = d3.zoom().scaleExtent([1, 8]).on("zoom", e => {
+  g.attr("transform", e.transform);
+  const s = 1 / Math.sqrt(e.transform.k);
+  gParks.selectAll("circle").attr("r", function(){ return +this.dataset.r * s; });
+  gLabels.selectAll("text").style("font-size", (15 * s) + "px");
+});
+svg.call(zoom).on("dblclick.zoom", null);
+svg.on("click", e => { if (e.target === svg.node() || e.target.classList.contains("state")) reset(); });
+
+const tip = d3.select("#tip");
+const showTip = (e, html) => tip.html(html).style("opacity", 1).style("left", (e.clientX + 14) + "px").style("top", (e.clientY + 14) + "px");
+const hideTip = () => tip.style("opacity", 0);
+
+d3.json("https://cdn.jsdelivr.net/npm/us-atlas@3.0.1/states-albers-10m.json").then(us => {
+  const path = d3.geoPath();
+  const nation = topojson.mesh(us, us.objects.nation);
+  gLand.append("path").attr("class","shadow").attr("d", path(nation));
+  gLand.selectAll(".state").data(topojson.feature(us, us.objects.states).features)
+    .join("path").attr("class","state").attr("d", path);
+  gLand.append("path").attr("class","nation").attr("d", path(nation));
+
+  // little pine trees sprinkled over forested regions (decorative)
+  const treeSpots = [[-121.5,44.5],[-122.6,40.9],[-120.3,47.6],[-115.5,46.6],[-111.2,44.0],[-106.6,39.2],[-107.2,35.8],[-105.6,33.2],
+                     [-91.6,46.8],[-85.3,44.9],[-83.2,35.4],[-80.0,38.6],[-72.1,43.9],[-69.4,45.4],[-92.7,35.1],[-89.2,32.6],[-94.6,31.3],[-77.6,41.3]];
+  gTrees.selectAll("path").data(treeSpots.map(c => projection(c)).filter(Boolean)).join("path").attr("class","tree")
+    .attr("d", ([x,y]) => `M${x} ${y-9} L${x+5} ${y-1} L${x+2} ${y-1} L${x+6} ${y+5} L${x-6} ${y+5} L${x-2} ${y-1} L${x-5} ${y-1} Z M${x-.8} ${y+5} h1.6 v3 h-1.6 Z`);
+
+  const line = d3.line().curve(d3.curveCatmullRom.alpha(.5));
+  gRoutes.selectAll("path").data(TRIPS).join("path")
+    .attr("class","route").attr("id", t => "route-" + t.id)
+    .attr("d", t => line(t.route.map(c => projection(c)).filter(Boolean)));
+
+  const placed = PARKS.map(p => ({...p, xy: projection([p.lon, p.lat])})).filter(p => p.xy);
+  const visited = placed.filter(p => visitedIds.has(p.id));
+
+  gParks.selectAll(".park-dim").data(placed.filter(p => !visitedIds.has(p.id))).join("circle")
+    .attr("class","park-dim").attr("cx", p => p.xy[0]).attr("cy", p => p.xy[1]).attr("data-r", 3.4).attr("r", 3.4)
+    .on("mousemove", (e,p) => showTip(e, `<b>${p.name}</b><br><span class="s">${p.state} · someday!</span>`))
+    .on("mouseleave", hideTip);
+  gParks.selectAll(".park-halo").data(visited).join("circle")
+    .attr("class","park-halo").attr("cx", p => p.xy[0]).attr("cy", p => p.xy[1]).attr("data-r", 9).attr("r", 9);
+  gParks.selectAll(".park-on").data(visited).join("circle")
+    .attr("class","park-on").attr("cx", p => p.xy[0]).attr("cy", p => p.xy[1]).attr("data-r", 5.5).attr("r", 5.5)
+    .on("mousemove", (e,p) => showTip(e, `<b>${p.name}</b><br><span class="s">${p.state} · click to open the journal</span>`))
+    .on("mouseleave", hideTip)
+    .on("click", (e,p) => { e.stopPropagation(); selectPark(p.id); });
+
+  renderStats();
+  renderTimeline();
+  renderIntro();
+});
+
+const tripForPark = id => TRIPS.find(t => t.visits.some(v => v.parkId === id));
+
+function selectPark(id, { zoomTo = true } = {}) {
+  const park = parkById[id], trip = tripForPark(id);
+  activateTrip(trip, { zoomTo });
+  gParks.selectAll(".park-on").classed("sel", p => p.id === id);
+  renderPanel(park, trip);
+}
+
+function activateTrip(trip, { zoomTo = true } = {}) {
+  gRoutes.selectAll(".route").classed("active", false).interrupt();
+  gRoutes.selectAll(".car").remove();
+  d3.selectAll(".tl-trip").classed("active", d => d === trip);
+  gLabels.selectAll("*").remove();
+  if (!trip) return;
+
+  // label the trip's parks in handwriting
+  const k = d3.zoomTransform(svg.node()).k;
+  trip.visits.forEach((v, i) => {
+    const p = parkById[v.parkId], [x, y] = projection([p.lon, p.lat]);
+    const below = i % 2 === 1;   // alternate above/below so clustered parks don't collide
+    gLabels.append("text").attr("class","park-label").attr("x", x).attr("y", below ? y + 18 : y - 9)
+      .attr("text-anchor", "middle").text(p.name);
+  });
+
+  // animate the road: a little car drives along the dashed route
+  const el = d3.select("#route-" + trip.id).classed("active", true).raise();
+  const node = el.node(), len = node.getTotalLength();
+  const car = gRoutes.append("circle").attr("class","car").attr("r", 4);
+  car.transition().duration(2600).ease(d3.easeCubicInOut).attrTween("transform", () => t => {
+    const pt = node.getPointAtLength(t * len); return `translate(${pt.x},${pt.y})`;
+  }).on("end", () => car.remove());
+
+  if (zoomTo) {
+    const pts = trip.route.map(c => projection(c)).filter(Boolean);
+    const [x0, x1] = d3.extent(pts, p => p[0]), [y0, y1] = d3.extent(pts, p => p[1]);
+    const s = Math.min(3, 0.5 / Math.max((x1 - x0) / W, (y1 - y0) / H));
+    svg.transition().duration(900).call(zoom.transform,
+      d3.zoomIdentity.translate(W/2, H/2).scale(s).translate(-(x0 + x1)/2, -(y0 + y1)/2));
+  }
+}
+
+function reset() {
+  activateTrip(null);
+  gParks.selectAll(".park-on").classed("sel", false);
+  svg.transition().duration(700).call(zoom.transform, d3.zoomIdentity);
+  renderIntro();
+}
+document.addEventListener("keydown", e => { if (e.key === "Escape") reset(); });
+
+// ---------- Journal panel ----------
+const mountains = `<svg viewBox="0 0 300 60" preserveAspectRatio="none" height="60"><path d="M0 60 L40 25 L65 40 L110 5 L150 38 L190 18 L230 42 L270 20 L300 35 L300 60 Z" fill="#6f8460"/><path d="M110 5 L122 16 L114 14 L104 18 Z" fill="#f2e8d2"/></svg>`;
+
+function renderPanel(park, trip) {
+  const v = trip.visits.find(v => v.parkId === park.id);
+  const d = parseDate(v.date);
+  const when = v.endDate ? `${fmtLong(d)}<br><span style="color:var(--ink-soft)">through ${fmtLong(parseDate(v.endDate))}</span>` : fmtLong(d);
+  d3.select("#panel").html(`
+    <p class="eyebrow">National Park</p>
+    <h2 class="pname">${park.name}</h2>
+    <p class="pstate">${park.state}</p>
+
+    <div class="stamp"><div>
+      <div class="t1">${park.name}</div>
+      <div class="t2">${d3.utcFormat("%b %d")(d).toUpperCase()}</div>
+      <div class="t3">★ ${d3.utcFormat("%Y")(d)} ★</div>
+    </div></div>
+
+    <dl class="facts">
+      <dt>Visited</dt><dd>${when}</dd>
+      <dt>Trip day</dt><dd>Day ${dayOfTrip(trip, v.date)} of ${dayOfTrip(trip, trip.end)}</dd>
+    </dl>
+
+    <hr class="divider">
+    <p class="eyebrow">Part of the road trip</p>
+    <div class="hand" style="font-size:28px">${trip.name}</div>
+    <dl class="facts">
+      <dt>Dates</dt><dd>${fmtShort(parseDate(trip.start))} – ${fmtShort(parseDate(trip.end))}, ${trip.start.slice(0,4)}</dd>
+      <dt>Distance</dt><dd>${trip.miles.toLocaleString()} miles</dd>
+    </dl>
+    <div class="polaroid"><div class="tape"></div><div class="ph">${mountains}</div><div class="cap">${trip.note}</div></div>
+
+    <p class="eyebrow">The route</p>
+    <ul class="trail">${trip.visits.map(s => `
+      <li data-id="${s.parkId}" class="${s.parkId === park.id ? "cur" : ""}"><span class="d">${fmtShort(parseDate(s.date))}</span><span class="n">${parkById[s.parkId].name}</span></li>`).join("")}
+    </ul>`);
+  d3.selectAll(".trail li").on("click", function(){ selectPark(this.dataset.id, { zoomTo: false }); });
+}
+
+function renderIntro() {
+  d3.select("#panel").html(`
+    <p class="eyebrow">Field journal</p>
+    <h2 class="pname">Where the road has taken me</h2>
+    <p class="hand" style="margin-top:14px">Tap an orange dot to open that day's page and retrace the drive.</p>
+    <hr class="divider">
+    <p class="eyebrow">Road trips</p>
+    <ul class="trail">${TRIPS.slice().reverse().map(t => `
+      <li data-id="${t.visits[0].parkId}"><span class="d">${d3.utcFormat("%b %Y")(parseDate(t.start))}</span><span class="n">${t.name}</span></li>`).join("")}
+    </ul>
+    <hr class="divider">
+    <p class="hand" style="color:var(--ink-soft);font-size:20px">${63 - visitedIds.size} parks still waiting…</p>`);
+  d3.selectAll(".trail li").on("click", function(){ selectPark(this.dataset.id); });
+}
+
+// ---------- Stats ----------
+function renderStats() {
+  const n = visitedIds.size;
+  const states = new Set([...visitedIds].map(id => parkById[id].state));
+  const count = (sel, to) => d3.select(sel).transition().duration(1400)
+    .tween("text", function(){ const i = d3.interpolateRound(0, to); return t => this.textContent = d3.format(",")(i(t)); });
+  count("#s-parks", n); count("#s-trips", TRIPS.length); count("#s-miles", d3.sum(TRIPS, t => t.miles)); count("#s-states", states.size);
+  d3.select("#s-sub").text(`${n} parks down, ${63 - n} to go`);
+}
+
+// ---------- Timeline (a winding trail with trail-marker flags) ----------
+function renderTimeline() {
+  const el = d3.select("#timeline");
+  const w = el.node().parentNode.clientWidth - 52, h = 78;
+  el.attr("viewBox", `0 0 ${w} ${h}`);
+  const x = d3.scaleUtc().domain([parseDate("2023-01-01"), parseDate("2026-12-31")]).range([30, w - 30]);
+  const yAt = px => 54 + Math.sin(px / 55) * 4;
+  el.append("path").attr("class","tl-path")
+    .attr("d", d3.line()(d3.range(10, w - 10, 6).map(px => [px, yAt(px)])));
+  el.append("g").selectAll("g").data(x.ticks(d3.utcMonth.every(6))).join("g").attr("class","tl-tick")
+    .append("text").attr("x", d => x(d)).attr("y", 75).attr("text-anchor","middle").text(d3.utcFormat("%b %Y"));
+  const trips = el.append("g").selectAll("g").data(TRIPS).join("g").attr("class","tl-trip")
+    .attr("transform", t => { const px = x(parseDate(t.start)); return `translate(${px},${yAt(px)})`; })
+    .on("click", (e, t) => selectPark(t.visits[0].parkId));
+  // alternate tall / short trail markers so neighbouring labels never collide
+  const pole = (_, i) => i % 2 ? 46 : 26;
+  trips.append("line").attr("class","pole").attr("y1", 0).attr("y2", (t, i) => -pole(t, i));
+  trips.append("path").attr("class","flag").attr("d", (t, i) => { const p = pole(t, i); return `M0 ${-p} L18 ${-p+5} L0 ${-p+11} Z`; });
+  trips.append("circle").attr("r", 3).attr("fill", "#3b3226");
+  trips.append("text").attr("x", 22).attr("y", (t, i) => -pole(t, i) + 10).text(t => t.name);
+}
+</script>
+</body>
+</html>
