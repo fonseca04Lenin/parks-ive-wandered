@@ -1,6 +1,6 @@
 // Turns a Google Maps Timeline export into data/trips.json (+ data/trips.js for the map).
 // Usage: node scripts/import-timeline.mjs [raw/Timeline.json]
-// Only park ids, dates and a simplified, home-trimmed route are written out.
+// Only park ids and visit dates are written out (routes only if overrides.publishRoutes is true, home-trimmed).
 import { readFileSync, writeFileSync } from "node:fs";
 
 const SRC = process.argv[2] ?? "raw/Timeline.json";
@@ -131,14 +131,14 @@ for (const run of runs) {
   const id = `trip-${start}`;
   const names = visits.map(v => parkById[v.parkId].name);
   const autoName = `${names.length > 2 ? names.slice(0, -1).join(", ") + " & " + names.at(-1) : names.join(" & ")} · ${months[+start.slice(5, 7) - 1]} ${start.slice(0, 4)}`;
-  trips.push({ id, name: overrides.tripNames?.[id] ?? autoName, start, end, miles, visits, route });
+  trips.push({ id, name: overrides.tripNames?.[id] ?? autoName, start, end, miles, visits, ...(overrides.publishRoutes ? { route } : {}) });
 }
 
 // ---------- parks I've been to that aren't in the Timeline (from memory) ----------
 const onTrips = new Set(trips.flatMap(t => t.visits.map(v => v.parkId)));
 const extraVisits = (overrides.alsoVisited ?? [])
   .filter(v => parkById[v.parkId] && !onTrips.has(v.parkId))
-  .map(({ parkId, date = null, note }) => ({ parkId, date, ...(note ? { note } : {}) }));
+  .map(({ parkId, date = null }) => ({ parkId, date }));
 
 // ---------- other places (not national parks): find their dates in the Timeline when possible ----------
 const otherPlaces = (overrides.otherPlaces ?? []).map(pl => {
@@ -149,7 +149,7 @@ const otherPlaces = (overrides.otherPlaces ?? []).map(pl => {
 
 // ---------- write + report ----------
 // nature & wilderness spots picked out of the Timeline (reviewed by hand, listed in overrides.json)
-const natureSpots = overrides.natureSpots ?? [];
+const natureSpots = (overrides.natureSpots ?? []).map(({ how, ...rest }) => rest);   // source notes stay out of the published data
 
 const out = { generated: new Date().toISOString(), source: "Google Maps Timeline", trips, extraVisits, otherPlaces, natureSpots };
 writeFileSync("data/trips.json", JSON.stringify(out, null, 1));
@@ -162,7 +162,7 @@ for (const h of [...hits.values()].sort((a, b) => a.t - b.t))
   console.log(`  ${excluded.has(`${h.parkId}|${h.date}`) ? "✗" : "✓"} ${h.date}  ${parkById[h.parkId].name.padEnd(22)} ${String(h.n).padStart(4)} pts  closest ${h.closestKm.toFixed(1)} km${h.visitMin ? `  stopped ${Math.round(h.visitMin)} min` : ""}`);
 console.log(`\nFound ${new Set(trips.flatMap(t => t.visits.map(v => v.parkId))).size} parks across ${trips.length} trips:`);
 for (const t of trips) {
-  console.log(`  ${t.id}  ${t.name}  (${t.start} → ${t.end}, ${t.miles} mi, ${t.route.length} route pts)`);
+  console.log(`  ${t.id}  ${t.name}  (${t.start} → ${t.end}, ${t.miles} mi)`);
   for (const v of t.visits) console.log(`     - ${parkById[v.parkId].name}: ${v.date}${v.endDate ? " → " + v.endDate : ""}`);
 }
 if (extraVisits.length) {
@@ -175,5 +175,5 @@ if (otherPlaces.length) {
 }
 if (natureSpots.length) {
   console.log(`\nNature & wilderness spots:`);
-  for (const n of natureSpots) console.log(`  - ${n.date}  ${n.name} (${n.kind}) — ${n.how}`);
+  for (const n of natureSpots) console.log(`  - ${n.date}  ${n.name} (${n.kind})`);
 }

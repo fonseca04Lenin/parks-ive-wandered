@@ -55,7 +55,6 @@
          background: radial-gradient(closest-side, rgba(6,10,8,.55), rgba(6,10,8,.25) 60%, transparent);
          text-shadow: 0 1px 2px rgba(0,0,0,.85), 0 0 12px rgba(0,0,0,.5); }
   .tag i { width: 7px; height: 7px; border-radius: 50%; background: var(--c, #ff7a35); box-shadow: 0 0 8px var(--c, #ff7a35); }
-  .car { width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 3px solid #ff7a35; box-shadow: 0 2px 8px rgba(0,0,0,.5); }
 
   .maplibregl-ctrl-group { background: rgba(14,18,16,.62) !important; border: 1px solid rgba(255,255,255,.12); border-radius: 10px !important; box-shadow: 0 8px 28px rgba(0,0,0,.35) !important; }
   .maplibregl-ctrl-group button + button { border-top: 1px solid rgba(255,255,255,.1) !important; }
@@ -106,8 +105,6 @@
       <span><svg width="12" height="16" viewBox="0 0 12 16"><path d="M6 0 L11 4 L6 8 L1 4 Z" fill="#ff8a45"/><rect x="5" y="7" width="2" height="8" fill="#e0662a"/></svg>Parks visited</span>
       <span><svg width="14" height="16" viewBox="0 0 14 16"><path d="M7 0 L12 7 H9.5 L13 12 H1 L4.5 7 H2 Z" fill="#3f8d55"/><rect x="6" y="12" width="2" height="4" fill="#6b4523"/></svg>Nature spots</span>
       <span><svg width="12" height="14" viewBox="0 0 12 14"><rect x="1" y="10" width="10" height="4" rx="1.5" fill="#c99d55"/><rect x="2.5" y="6" width="7" height="4" rx="1.5" fill="#e0bd7a"/><rect x="4" y="2" width="4" height="4" rx="1.5" fill="#c99d55"/></svg>Other places</span>
-      <span><svg width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="none" stroke="#fff" stroke-opacity=".85" stroke-width="1.5"/></svg>Still to find</span>
-      <span><svg width="22" height="8"><path d="M1 4 H21" stroke="#ff8a3d" stroke-width="3" stroke-linecap="round"/></svg>Road trip</span>
     </div>
     <div class="regions card">
       <button data-r="us">Lower 48</button>
@@ -134,9 +131,7 @@ const visitedIds = new Set([...TRIPS.flatMap(t => t.visits.map(v => v.parkId)), 
 const parseDate = d3.utcParse("%Y-%m-%d");
 const fmtLong = d3.utcFormat("%A, %B %-d, %Y");
 const fmtShort = d3.utcFormat("%b %-d");
-const dayOfTrip = (trip, date) => Math.round((parseDate(date) - parseDate(trip.start)) / 864e5) + 1;
 const tripsForPark = id => TRIPS.filter(t => t.visits.some(v => v.parkId === id));
-const tripForPark = id => tripsForPark(id).at(-1);
 
 // ---------- 3D pickup items (three.js, drawn as a custom layer on the map) ----------
 let selectedParkId = null, modelsOn = true;
@@ -242,10 +237,12 @@ const pickupLayer = {
         o.material.emissive.setHex(KINDS[it.kind].hi);
         o.material.emissiveIntensity = w * 1.1;
       });
-      this.camera.projectionMatrix = proj.clone().multiply(
+      const mvp = proj.clone().multiply(
         new THREE.Matrix4().makeTranslation(merc.x, merc.y, merc.z)
           .scale(new THREE.Vector3(s, -s, s))
           .multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)));
+      this.camera.projectionMatrix = mvp;
+      pk.hit = screenBox(mvp, HIT[it.kind]);   // where this item really is on screen, so every part of it is clickable
       this.renderer.resetState();
       this.renderer.render(scene, this.camera);
     }
@@ -261,27 +258,46 @@ function paintSelection() {
   }
 }
 function refreshModels() { paintSelection(); map.triggerRepaint(); }
-// hit-testing: a box on screen from each item's ground point up to its top
+// hit-testing: project each model's bounding box through the exact matrix it is drawn with,
+// so the clickable area is the whole object (plus a little padding), at any zoom, tilt or rotation
+const HIT = { park: { r: .27, h: 1.18 }, nature: { r: .42, h: 1.18 }, other: { r: .44, h: 1.16 } };   // model units, 1 = full height
+function screenBox(m, { r, h }) {
+  const cv = map.getCanvas(), cw = cv.clientWidth, ch = cv.clientHeight, v = new THREE.Vector4();
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, depth = 0;
+  for (const x of [-r, r]) for (const y of [0, h]) for (const z of [-r, r]) {
+    v.set(x, y, z, 1).applyMatrix4(m);
+    if (v.w <= 0) return null;                                       // behind the camera
+    const px = (v.x / v.w * .5 + .5) * cw, py = (1 - (v.y / v.w * .5 + .5)) * ch;
+    x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); depth += v.w;
+  }
+  const pad = 10;
+  return { x0: x0 - pad, y0: y0 - pad, x1: x1 + pad, y1: y1 + pad, depth: depth / 8 };
+}
 function pickAt(pt) {
-  const pitch = map.getPitch() * Math.PI / 180;
   let best = null;
   for (const pk of pickups) {
-    if (!pk.px) continue;
-    const g = map.project(pk.it.c), h = pk.px * (.25 + .75 * Math.sin(pitch) ** .5), w = pk.px * .22;
-    if (pt.x > g.x - w && pt.x < g.x + w && pt.y < g.y + 8 && pt.y > g.y - h) {
-      if (!best || g.y > best.gy) best = { pk, gy: g.y };           // nearest to the camera wins
-    }
+    const b = pk.hit;
+    if (!b || pt.x < b.x0 || pt.x > b.x1 || pt.y < b.y0 || pt.y > b.y1) continue;
+    if (!best || b.depth < best.hit.depth) best = pk;                // overlapping items: the one nearer the camera wins
   }
-  return best?.pk;
+  return best;
+}
+// visit dates only — no source notes, no durations
+const fmtDate = d => d.length === 7 ? d3.utcFormat("%B %Y")(d3.utcParse("%Y-%m")(d)) : fmtLong(parseDate(d));
+const visitRow = ({ date, end }) => `<div class="when">${!date ? "Visited" : end ? `${fmtShort(parseDate(date))} – ${fmtDate(end)}` : fmtDate(date)}</div>`;
+function parkVisits(id) {
+  const out = [];
+  for (const t of TRIPS) for (const v of t.visits) if (v.parkId === id) out.push({ date: v.date, end: v.endDate });
+  for (const v of EXTRA) if (v.parkId === id) out.push({ date: v.date });
+  return out.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));      // newest first
 }
 function openModel(p) {
   if (p.kind === "park") return selectPark(p.ref);
   const item = p.kind === "nature" ? NATURE[p.ref] : OTHER[p.ref];
-  const dates = p.kind === "nature" ? [item.date] : item.dates;
-  const when = dates.length ? dates.map(d => fmtLong(parseDate(d))).join("<br>") : "Date not recorded";
-  const sub = p.kind === "nature" ? item.how : "";
-  infoPopup.setLngLat([item.lon, item.lat]).setHTML(card(p.kind === "nature" ? "Nature spot" : "Other place", p.accent, item.name, item.kind,
-    [`<div class="when">${when}</div>${sub ? `<div class="sub">${sub}</div>` : ""}`])).addTo(map);
+  const dates = (p.kind === "nature" ? [item.date] : item.dates).filter(Boolean).sort().reverse();
+  openKey = `${p.kind}:${p.ref}`;
+  showPopup([item.lon, item.lat], card(p.kind === "nature" ? "Nature spot" : "Other place", p.accent, item.name, item.kind,
+    (dates.length ? dates : [null]).map(d => visitRow({ date: d }))));
   map.flyTo({ center: [item.lon, item.lat], zoom: 12, pitch: 66, bearing: (Math.random() * 120) - 60, duration: 3000, essential: true });
 }
 const card = (eyebrow, color, title, kind, rows) =>
@@ -326,9 +342,6 @@ const map = new maplibregl.Map({
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
 map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
 
-const tagMarkers = [];
-let carMarker = null, animFrame = null;
-
 map.on("load", async () => {
   // faint state borders on top of the imagery
   try {
@@ -338,44 +351,22 @@ map.on("load", async () => {
       paint: { "line-color": "#fff6e0", "line-opacity": ["interpolate", ["linear"], ["zoom"], 3, .45, 8, .15], "line-width": 1, "line-dasharray": [3, 2] } });
   } catch (e) { console.warn("state borders unavailable", e); }
 
-  // all road trips (faint), plus one "active" route that draws itself
-  map.addSource("routes", { type: "geojson",
-    data: fc(TRIPS.map(t => ({ type: "Feature", properties: { id: t.id }, geometry: { type: "LineString", coordinates: t.route } }))) });
-  map.addLayer({ id: "routes", type: "line", source: "routes", layout: { "line-join": "round", "line-cap": "round" },
-    paint: { "line-color": "#ffd2a8", "line-width": 2, "line-opacity": .55, "line-dasharray": [1, 2] } });
-  map.addSource("active-route", { type: "geojson", lineMetrics: true, data: fc([]) });
-  map.addLayer({ id: "active-route-casing", type: "line", source: "active-route", layout: { "line-join": "round", "line-cap": "round" },
-    paint: { "line-color": "#3a1d0b", "line-width": 7, "line-opacity": .45, "line-blur": 2 } });
-  map.addLayer({ id: "active-route", type: "line", source: "active-route", layout: { "line-join": "round", "line-cap": "round" },
-    paint: { "line-width": 4, "line-gradient": ["step", ["line-progress"], "#ff8a3d", 0, "rgba(0,0,0,0)"] } });
-
   // ---------- markers ----------
-  // parks still to see: a quiet ring on the ground
-  map.addSource("unvisited", { type: "geojson",
-    data: fc(PARKS.filter(p => !visitedIds.has(p.id)).map(p => ({ type: "Feature", properties: { name: p.name, sub: `${p.state} · still to see` }, geometry: { type: "Point", coordinates: [p.lon, p.lat] } }))) });
-  map.addLayer({ id: "unvisited", type: "circle", source: "unvisited",
-    paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 3, 4, 10, 9], "circle-color": "rgba(10,14,12,.25)",
-             "circle-stroke-color": "#ffffff", "circle-stroke-opacity": .8, "circle-stroke-width": 1.5, "circle-pitch-alignment": "map" } });
-  map.addLayer({ id: "unvisited-dot", type: "circle", source: "unvisited",
-    paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 3, 1.2, 10, 2.2], "circle-color": "#ffffff", "circle-opacity": .9, "circle-pitch-alignment": "map" } });
-
   // 3D pickup items
   map.addLayer(pickupLayer);
 
-  // click + hover
+  // click + hover: the whole model is the target
   const hover = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14, className: "hover" });
   const tagHTML = (name, color) => `<div class="tag" style="--c:${color}"><i></i>${name}</div>`;
-  map.on("click", e => { const pk = modelsOn && pickAt(e.point); if (pk) openModel(pk.it.props); });
+  map.on("click", e => {
+    const pk = modelsOn && pickAt(e.point);
+    hover.remove();
+    if (pk) openModel(pk.it.props); else closeInfo();               // clicking empty map closes the card
+  });
   map.on("mousemove", e => {
     const pk = modelsOn && pickAt(e.point);
-    if (pk) {
-      map.getCanvas().style.cursor = "pointer";
-      hover.setLngLat(pk.it.c).setHTML(tagHTML(pk.it.props.name, pk.it.props.accent)).addTo(map);
-      return;
-    }
-    map.getCanvas().style.cursor = "";
-    const f = map.queryRenderedFeatures(e.point, { layers: ["unvisited"] })[0];
-    if (f) hover.setLngLat(f.geometry.coordinates).setHTML(tagHTML(`${f.properties.name} <span style="opacity:.6;font-weight:500">· someday</span>`, "#ffffff")).addTo(map);
+    map.getCanvas().style.cursor = pk ? "pointer" : "";
+    if (pk && openKey !== `${pk.it.props.kind}:${pk.it.props.ref}`) hover.setLngLat(pk.it.c).setHTML(tagHTML(pk.it.props.name, pk.it.props.accent)).addTo(map);
     else hover.remove();
   });
 
@@ -384,65 +375,22 @@ map.on("load", async () => {
 });
 
 // ---------- Interactions ----------
-function setActiveRoute(trip) {
-  cancelAnimationFrame(animFrame);
-  if (carMarker) { carMarker.remove(); carMarker = null; }
-  tagMarkers.splice(0).forEach(m => m.remove());
-  const src = map.getSource("active-route");
-  if (!src) return;
-  if (!trip) { src.setData(fc([])); return; }
-
-  trip.visits.forEach(v => {
-    const p = parkById[v.parkId], el = document.createElement("div");
-    el.innerHTML = `<div class="tag"><i></i>${p.name}</div>`;
-    tagMarkers.push(new maplibregl.Marker({ element: el, anchor: "left", offset: [16, 0] }).setLngLat([p.lon, p.lat]).addTo(map));
-  });
-  src.setData(fc([{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: trip.route } }]));
-
-  // a little car drives the route while the line draws in behind it
-  const lens = [0];
-  for (let i = 1; i < trip.route.length; i++) lens.push(lens[i - 1] + Math.hypot(trip.route[i][0] - trip.route[i - 1][0], trip.route[i][1] - trip.route[i - 1][1]));
-  const total = lens[lens.length - 1];
-  const at = t => {
-    const d = t * total; let i = lens.findIndex(l => l >= d); if (i <= 0) return trip.route[0];
-    const f = (d - lens[i - 1]) / (lens[i] - lens[i - 1] || 1), a = trip.route[i - 1], b = trip.route[i];
-    return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
-  };
-  const carEl = document.createElement("div"); carEl.className = "car";
-  carMarker = new maplibregl.Marker({ element: carEl }).setLngLat(trip.route[0]).addTo(map);
-  const t0 = performance.now(), dur = 4200;
-  const step = now => {
-    const t = Math.min(1, (now - t0) / dur), e = d3.easeCubicInOut(t);
-    map.setPaintProperty("active-route", "line-gradient",
-      ["step", ["line-progress"], "#ff8a3d", Math.min(1, Math.max(e, 0.0001)), "rgba(0,0,0,0)"]);
-    carMarker.setLngLat(at(e));
-    if (t < 1) animFrame = requestAnimationFrame(step);
-    else { carMarker.remove(); carMarker = null; }
-  };
-  animFrame = requestAnimationFrame(step);
+let openKey = null, reopening = false;
+function showPopup(lngLat, html) {
+  reopening = true;                                                 // re-opening for another item shouldn't clear the selection
+  infoPopup.setLngLat(lngLat).setHTML(html).addTo(map);
+  reopening = false;
 }
-
-function flyToTrip(trip) {
-  const b = new maplibregl.LngLatBounds();
-  trip.route.forEach(c => b.extend(c));
-  const cam = map.cameraForBounds(b, { padding: 80 });
-  map.flyTo({ center: cam.center, zoom: cam.zoom - 0.2, pitch: 55, bearing: -18, duration: 2600, essential: true });
-}
-
-function selectPark(id, { fly = "park" } = {}) {
-  const park = parkById[id], trip = tripForPark(id);
-  selectedParkId = id; refreshModels();
-  setActiveRoute(trip);
-  if (fly === "trip" && trip) flyToTrip(trip);
-  else map.flyTo({ center: [park.lon, park.lat], zoom: 10.2, pitch: 68, bearing: (Math.random() * 120) - 60, duration: 3200, essential: true });
+function closeInfo() { infoPopup.remove(); }                        // its 'close' handler clears the selection
+function selectPark(id) {
+  const park = parkById[id];
+  selectedParkId = id; openKey = `park:${id}`; refreshModels();
+  map.flyTo({ center: [park.lon, park.lat], zoom: 10.2, pitch: 68, bearing: (Math.random() * 120) - 60, duration: 3200, essential: true });
   showInfo(park);
 }
-
 function reset() {
-  setActiveRoute(null);
-  selectedParkId = null; refreshModels();
+  closeInfo();
   map.flyTo({ ...HOME, pitch: 48, bearing: -12, duration: 2200 });
-  infoPopup.remove();
 }
 document.addEventListener("keydown", e => { if (e.key === "Escape") reset(); });
 
@@ -460,20 +408,13 @@ document.getElementById("t3d").addEventListener("click", function () {
   map.easeTo({ pitch: on ? 55 : 0, duration: 1000 });
 });
 
-// ---------- Park info popup (date + trip) ----------
-const infoPopup = new maplibregl.Popup({ closeButton: true, anchor: "left", offset: [70, 0], maxWidth: "360px", className: "info" });
+// ---------- Info popup: name, place and the dates I was there ----------
+// closeOnClick is off: the map's click handler opens/closes it itself, so a click on another model never closes it by accident
+const infoPopup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, anchor: "left", offset: [70, 0], maxWidth: "360px", className: "info" });
+infoPopup.on("close", () => { if (!reopening) { selectedParkId = null; openKey = null; refreshModels(); } });
 function showInfo(park) {
-  // list every visit to this park (e.g. Yellowstone in June and again in October)
-  const rows = tripsForPark(park.id).map(trip => {
-    const v = trip.visits.find(v => v.parkId === park.id);
-    const when = v.endDate ? `${fmtShort(parseDate(v.date))} – ${fmtLong(parseDate(v.endDate))}` : fmtLong(parseDate(v.date));
-    return `<div class="when">${when}</div><div class="sub">${trip.name.split(" · ")[0]} trip · day ${dayOfTrip(trip, v.date)} of ${dayOfTrip(trip, trip.end)}</div>`;
-  }).reverse();
-  for (const v of EXTRA.filter(v => v.parkId === park.id)) {
-    const when = !v.date ? "Date not recorded" : v.date.length === 7 ? d3.utcFormat("%B %Y")(d3.utcParse("%Y-%m")(v.date)) : fmtLong(parseDate(v.date));
-    rows.push(`<div class="when">${when}</div><div class="sub">Before my Timeline started</div>`);
-  }
-  infoPopup.setLngLat([park.lon, park.lat]).setHTML(card("National park", "#ff9a5c", park.name, park.state, rows)).addTo(map);
+  const rows = parkVisits(park.id).map(visitRow);
+  showPopup([park.lon, park.lat], card("National park", "#ff9a5c", park.name, park.state, rows.length ? rows : [visitRow({})]));
 }
 </script>
 </body>
