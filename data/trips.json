@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-09T18:17:16.341Z",
+ "generated": "2026-11-10T14:07:43.945Z",
  "source": "Google Maps Timeline",
  "trips": [
   {
@@ -58,6 +58,10 @@
   {
    "parkId": "badlands",
    "date": null
+  },
+  {
+   "parkId": "mount-rainier",
+   "date": "2023-11-11"
   }
  ],
  "otherPlaces": [
