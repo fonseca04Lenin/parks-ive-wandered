@@ -129,8 +129,8 @@
 </main>
 
 
-<script src="../data/trips.js"></script>
-<script src="music.js"></script>
+<script src="/data/trips.js"></script>
+<script src="/mockup/music.js"></script>
 <script>
 // ---------- Data: generated from my Google Maps Timeline by scripts/import-timeline.mjs ----------
 const PARKS = window.PARKS;
@@ -413,21 +413,23 @@ document.addEventListener("keydown", e => {
 
 // ---------- Adventure music ----------
 const musicBtn = document.getElementById("music");
-const musicPref = () => { try { return localStorage.getItem("parks-music"); } catch { return null; } };
-const setMusicPref = v => { try { localStorage.setItem("parks-music", v); } catch {} };
-AdventureMusic.onchange = on => { musicBtn.classList.toggle("on", on); musicBtn.setAttribute("aria-pressed", on); };
-musicBtn.addEventListener("click", async () => {
-  if (AdventureMusic.playing) { AdventureMusic.stop(); setMusicPref("off"); }
-  else { await AdventureMusic.start(); setMusicPref("on"); }
-});
-// browsers only allow sound after a click or key press, so the theme starts on the visitor's first
-// interaction with the page — unless they switched it off before (that choice is remembered)
-const startOnFirstGesture = e => {
-  if (e.target.closest && e.target.closest("#music")) return;
-  ["pointerup", "keydown", "touchend"].forEach(t => removeEventListener(t, startOnFirstGesture));
-  if (musicPref() !== "off") AdventureMusic.start();
-};
-["pointerup", "keydown", "touchend"].forEach(t => addEventListener(t, startOnFirstGesture));
+if (window.AdventureMusic) {
+  const musicPref = () => { try { return localStorage.getItem("parks-music"); } catch { return null; } };
+  const setMusicPref = v => { try { localStorage.setItem("parks-music", v); } catch {} };
+  AdventureMusic.onchange = on => { musicBtn.classList.toggle("on", on); musicBtn.setAttribute("aria-pressed", on); };
+  musicBtn.addEventListener("click", async () => {
+    if (AdventureMusic.playing) { AdventureMusic.stop(); setMusicPref("off"); }
+    else { await AdventureMusic.start(); setMusicPref("on"); }
+  });
+  // browsers only allow sound after a click or key press, so the theme starts on the visitor's first
+  // interaction with the page — unless they switched it off before (that choice is remembered)
+  const startOnFirstGesture = e => {
+    if (e.target.closest && e.target.closest("#music")) return;
+    ["pointerup", "keydown", "touchend"].forEach(t => removeEventListener(t, startOnFirstGesture));
+    if (musicPref() !== "off") AdventureMusic.start();
+  };
+  ["pointerup", "keydown", "touchend"].forEach(t => addEventListener(t, startOnFirstGesture));
+} else musicBtn.hidden = true;
 
 const REGIONS = {
   us: () => reset(),
