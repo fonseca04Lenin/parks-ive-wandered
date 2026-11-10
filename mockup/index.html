@@ -123,7 +123,7 @@
       <button data-r="ak">Alaska</button>
       <button data-r="hi">Hawaiʻi</button>
       <button class="toggle3d on" id="t3d">3D</button>
-      <button class="music" id="music" title="Music on/off (M)" aria-label="Toggle adventure music" aria-pressed="false"><span class="eq"><i></i><i></i><i></i></span>Music</button>
+      <button class="music" id="music" title="Sound on/off (M)" aria-label="Toggle sound" aria-pressed="false"><span class="eq"><i></i><i></i><i></i></span>Sound</button>
     </div>
   </div>
 </main>
@@ -375,7 +375,7 @@ map.on("load", async () => {
   map.on("click", e => {
     const pk = modelsOn && pickAt(e.point);
     hover.remove();
-    if (pk) openModel(pk.it.props); else closeInfo();               // clicking empty map closes the card
+    if (pk) { if (window.AdventureMusic) AdventureMusic.sfx(pk.it.kind); openModel(pk.it.props); } else closeInfo();               // clicking empty map closes the card
   });
   map.on("mousemove", e => {
     const pk = modelsOn && pickAt(e.point);
@@ -416,10 +416,11 @@ const musicBtn = document.getElementById("music");
 if (window.AdventureMusic) {
   const musicPref = () => { try { return localStorage.getItem("parks-music"); } catch { return null; } };
   const setMusicPref = v => { try { localStorage.setItem("parks-music", v); } catch {} };
+  AdventureMusic.sfxEnabled = musicPref() !== "off";                // the one Sound button controls the music and the item chimes
   AdventureMusic.onchange = on => { musicBtn.classList.toggle("on", on); musicBtn.setAttribute("aria-pressed", on); };
   musicBtn.addEventListener("click", async () => {
-    if (AdventureMusic.playing) { AdventureMusic.stop(); setMusicPref("off"); }
-    else { await AdventureMusic.start(); setMusicPref("on"); }
+    if (AdventureMusic.playing) { AdventureMusic.stop(); AdventureMusic.sfxEnabled = false; setMusicPref("off"); }
+    else { AdventureMusic.sfxEnabled = true; await AdventureMusic.start(); setMusicPref("on"); }
   });
   // browsers only allow sound after a click or key press, so the theme starts on the visitor's first
   // interaction with the page — unless they switched it off before (that choice is remembered)

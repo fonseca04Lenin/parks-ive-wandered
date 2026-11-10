@@ -136,6 +136,10 @@
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -16; comp.knee.value = 12; comp.ratio.value = 3.5; comp.attack.value = .01; comp.release.value = .3;
     g.master.connect(comp); comp.connect(ctx.destination);
+    g.sfx = ctx.createGain();                                                  // sound effects: straight to the compressor, with a short sparkle echo
+    const sd = ctx.createDelay(.5), sfb = ctx.createGain(), sw = ctx.createGain();
+    sd.delayTime.value = .11; sfb.gain.value = .3; sw.gain.value = .35;
+    g.sfx.connect(comp); g.sfx.connect(sd); sd.connect(sfb); sfb.connect(sd); sd.connect(sw); sw.connect(comp);
     const verb = ctx.createConvolver(), vg = ctx.createGain();
     verb.buffer = impulse(ctx); vg.gain.value = .32; verb.connect(vg); vg.connect(g.master);
     const bus = wet => { const b = ctx.createGain(), w = ctx.createGain(); w.gain.value = wet; b.connect(g.master); b.connect(w); w.connect(verb); return b; };
@@ -149,14 +153,54 @@
     return g;
   }
 
+  // ---------- item sounds ----------
+  // a quick rising "you found something" chime: bell-like notes, a soft thump underneath
+  const CHIME = {
+    park:   [[74, 0], [78, .075], [81, .15], [86, .225], [93, .33]],     // D5 F#5 A5 D6, then a high A6 sparkle
+    nature: [[81, 0], [85, .07], [88, .14], [93, .22]],                  // A5 C#6 E6 A6
+    other:  [[78, 0], [83, .09], [90, .18]],                             // F#5 B5 F#6
+  };
+  function bell(g, t, m, v, decay) {
+    const { ctx } = g, out = ctx.createGain(), f = hz(m);
+    out.gain.setValueAtTime(.0001, t); out.gain.exponentialRampToValueAtTime(.16 * v, t + .006); out.gain.exponentialRampToValueAtTime(.0001, t + decay);
+    for (const [r, a] of [[1, 1], [2.01, .3], [3.97, .14]]) {
+      const o = ctx.createOscillator(), og = ctx.createGain();
+      o.type = "sine"; o.frequency.value = f * r; og.gain.value = a;
+      o.connect(og); og.connect(out); o.start(t); o.stop(t + decay + .05);
+    }
+    out.connect(g.sfx);
+  }
+  function thump(g, t) {
+    const { ctx } = g, o = ctx.createOscillator(), a = ctx.createGain();
+    o.frequency.setValueAtTime(170, t); o.frequency.exponentialRampToValueAtTime(65, t + .09);
+    a.gain.setValueAtTime(.22, t); a.gain.exponentialRampToValueAtTime(.001, t + .12);
+    o.connect(a); a.connect(g.sfx); o.start(t); o.stop(t + .15);
+  }
+  function playChime(g, t, kind) {
+    const notes = CHIME[kind] || CHIME.park;
+    notes.forEach(([m, dt], i) => { const last = i === notes.length - 1; bell(g, t + dt, m, last ? 1 : .85, last ? 1.4 : .7); });
+    thump(g, t);
+  }
+  async function sfx(kind = "park") {
+    if (!api.sfxEnabled) return;
+    try { ensure(); if (ctx.state !== "running") await ctx.resume(); } catch (err) { return; }
+    playChime(g, ctx.currentTime + .01, kind);
+  }
+  async function renderSfx(kind) {
+    const oc = new OfflineAudioContext(2, Math.ceil(44100 * 2.5), 44100), og = buildGraph(oc);
+    playChime(og, .05, kind);
+    return oc.startRendering();
+  }
+
   // ---------- playing it live ----------
   let ctx = null, g = null, timer = null, cur = 0, next = 0, on = false, resumeOnShow = false;
   const emit = () => api.onchange && api.onchange(on);
   function tick() { while (next < ctx.currentTime + .25) { play(g, TL[cur], next); next += STEP; cur = (cur + 1) % STEPS; } }
+  function ensure() { if (!ctx) { ctx = new (window.AudioContext || window.webkitAudioContext)(); g = buildGraph(ctx); } }
   async function start() {
     if (on) return;
     try {
-      if (!ctx) { ctx = new (window.AudioContext || window.webkitAudioContext)(); g = buildGraph(ctx); }
+      ensure();
       await ctx.resume();
     } catch (err) { console.warn("music unavailable", err); return; }
     on = true;
@@ -190,7 +234,7 @@
   }
 
   const api = {
-    start, stop, render, onchange: null, bars: BARS, seconds: STEPS * STEP,
+    start, stop, render, sfx, renderSfx, sfxEnabled: true, onchange: null, bars: BARS, seconds: STEPS * STEP,
     toggle: () => (on ? stop() : start()),
     get playing() { return on; },
     get state() { return ctx ? ctx.state : "none"; },
