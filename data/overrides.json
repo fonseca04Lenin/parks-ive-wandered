@@ -9,7 +9,7 @@
     {
       "parkId": "badlands",
       "date": "2026-06-26",
-      "why": "Drove past on I-90, which runs just north of the park"
+      "why": "The Timeline only shows driving past on I-90 that day; the visit itself is recorded under alsoVisited"
     },
     {
       "parkId": "glacier",
@@ -29,11 +29,11 @@
   "alsoVisited": [
     {
       "parkId": "great-sand-dunes",
-      "date": null
+      "date": "2024-12-24"
     },
     {
       "parkId": "sequoia",
-      "date": null
+      "date": "2024-07-04"
     },
     {
       "parkId": "rocky",
@@ -41,7 +41,7 @@
     },
     {
       "parkId": "badlands",
-      "date": null
+      "date": "2026-06-26"
     },
     {
       "parkId": "mount-rainier",

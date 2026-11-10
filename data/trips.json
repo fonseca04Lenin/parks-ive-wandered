@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-10T14:07:43.945Z",
+ "generated": "2026-11-10T14:12:00.057Z",
  "source": "Google Maps Timeline",
  "trips": [
   {
@@ -45,11 +45,11 @@
  "extraVisits": [
   {
    "parkId": "great-sand-dunes",
-   "date": null
+   "date": "2024-12-24"
   },
   {
    "parkId": "sequoia",
-   "date": null
+   "date": "2024-07-04"
   },
   {
    "parkId": "rocky",
@@ -57,7 +57,7 @@
   },
   {
    "parkId": "badlands",
-   "date": null
+   "date": "2026-06-26"
   },
   {
    "parkId": "mount-rainier",
