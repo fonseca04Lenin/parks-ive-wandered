@@ -83,6 +83,11 @@
   @keyframes reveal { from { opacity: 0; transform: translateX(-10px); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
   .info .maplibregl-popup-close-button { color: #fff; opacity: .55; font-size: 20px; right: 26px; top: 14px; background: none; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
   .info .maplibregl-popup-close-button:hover { opacity: 1; background: none; }
+  /* my own photo of the place, below the title and dates */
+  .info .ph { display: block; width: 270px; max-width: 100%; height: 190px; object-fit: cover; margin: 18px 0 0;
+              border-radius: 10px; border: 1px solid rgba(255,255,255,.24); box-shadow: 0 10px 28px rgba(0,0,0,.5);
+              opacity: 0; transform: translateY(6px); transition: opacity .6s ease, transform .6s ease; }
+  .info .ph.in { opacity: 1; transform: none; }
   .info .eyebrow { font: 600 10.5px/1 "Inter", sans-serif; letter-spacing: .22em; text-transform: uppercase; color: var(--c, #ff9a5c);
                    margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
   .info .eyebrow i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
@@ -138,6 +143,7 @@ const parkById = Object.fromEntries(PARKS.map(p => [p.id, p]));
 const TRIPS = window.TRIP_DATA.trips;
 const EXTRA = window.TRIP_DATA.extraVisits ?? [];      // parks visited before my Timeline started
 const OTHER = window.TRIP_DATA.otherPlaces ?? [];      // memorable spots that aren't national parks
+const PHOTOS = window.TRIP_DATA.photos ?? {};            // my own photos, keyed "park:<id>", "nature:<name>", "other:<name>"
 const NATURE = window.TRIP_DATA.natureSpots ?? [];     // nature & wilderness spots found in my Timeline
 const visitedIds = new Set([...TRIPS.flatMap(t => t.visits.map(v => v.parkId)), ...EXTRA.map(v => v.parkId)]);
 
@@ -311,11 +317,12 @@ function openModel(p) {
   const dates = (p.kind === "nature" ? [item.date] : item.dates).filter(Boolean).sort().reverse();
   openKey = `${p.kind}:${p.ref}`;
   showPopup([item.lon, item.lat], card(p.kind === "nature" ? "Nature spot" : "Other place", p.accent, item.name, item.kind,
-    (dates.length ? dates : [null]).map(d => visitRow({ date: d }))));
+    (dates.length ? dates : [null]).map(d => visitRow({ date: d })), photoFor(`${p.kind}:${item.name}`, item.name)));
   map.flyTo({ center: [item.lon, item.lat], zoom: 12, pitch: 66, bearing: (Math.random() * 120) - 60, duration: 3000, essential: true });
 }
-const card = (eyebrow, color, title, kind, rows) =>
-  `<div style="--c:${color}"><div class="eyebrow"><i></i>${eyebrow}</div><h3>${title}</h3>${kind ? `<div class="kind">${kind}</div>` : ""}${rows.map(r => `<div class="row">${r}</div>`).join("")}</div>`;
+const photoFor = (key, alt) => (PHOTOS[key] ? { src: PHOTOS[key], alt } : null);
+const card = (eyebrow, color, title, kind, rows, photo) =>
+  `<div style="--c:${color}"><div class="eyebrow"><i></i>${eyebrow}</div><h3>${title}</h3>${kind ? `<div class="kind">${kind}</div>` : ""}${rows.map(r => `<div class="row">${r}</div>`).join("")}${photo ? `<img class="ph" src="${photo.src}" alt="${photo.alt}" decoding="async" onload="this.classList.add('in')" onerror="this.remove()">` : ""}</div>`;
 const fc = features => ({ type: "FeatureCollection", features });
 
 // ---------- Map: satellite imagery + 3D terrain ----------
@@ -448,11 +455,11 @@ document.getElementById("t3d").addEventListener("click", function () {
 
 // ---------- Info popup: name, place and the dates I was there ----------
 // closeOnClick is off: the map's click handler opens/closes it itself, so a click on another model never closes it by accident
-const infoPopup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, anchor: "left", offset: [70, 0], maxWidth: "360px", className: "info" });
+const infoPopup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, anchor: "left", offset: [70, 0], maxWidth: "420px", className: "info" });
 infoPopup.on("close", () => { if (!reopening) { selectedParkId = null; openKey = null; refreshModels(); } });
 function showInfo(park) {
   const rows = parkVisits(park.id).map(visitRow);
-  showPopup([park.lon, park.lat], card("National park", "#ff9a5c", park.name, park.state, rows.length ? rows : [visitRow({})]));
+  showPopup([park.lon, park.lat], card("National park", "#ff9a5c", park.name, park.state, rows.length ? rows : [visitRow({})], photoFor(`park:${park.id}`, park.name)));
 }
 </script>
 </body>

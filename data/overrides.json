@@ -226,5 +226,26 @@
       "date": "2022-03-14"
     }
   ],
-  "publishRoutes": false
+  "publishRoutes": false,
+  "photos": {
+    "park:yellowstone": "/photos/yellowstone.jpg",
+    "park:grand-teton": "/photos/grand-teton.jpg",
+    "park:glacier": "/photos/glacier.jpg",
+    "park:rocky": "/photos/rocky-mountain.jpg",
+    "park:sequoia": "/photos/sequoia.jpg",
+    "park:great-sand-dunes": "/photos/great-sand-dunes.jpg",
+    "park:badlands": "/photos/badlands.jpg",
+    "other:Mount Rushmore": "/photos/mount-rushmore.jpg",
+    "other:Estes Park": "/photos/estes-park.jpg",
+    "other:Sedona": "/photos/sedona.jpg",
+    "nature:Jenny Lake": "/photos/jenny-lake.jpg",
+    "nature:Laurance S. Rockefeller Preserve": "/photos/rockefeller-preserve.jpg",
+    "nature:Mormon Row": "/photos/mormon-row.jpg",
+    "nature:Old Faithful": "/photos/old-faithful.jpg",
+    "nature:Wapiti Valley": "/photos/wapiti-valley.jpg",
+    "nature:South Park & Wilkerson Pass": "/photos/south-park.jpg",
+    "nature:Marble Canyon & Navajo Bridge": "/photos/marble-canyon.jpg",
+    "nature:Sausalito & the Marin coast": "/photos/sausalito.jpg",
+    "nature:Colorado foothills": "/photos/colorado-foothills.jpg"
+  }
 }
